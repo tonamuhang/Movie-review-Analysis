@@ -4,6 +4,7 @@ import pandas as pd
 import nltk
 import os
 
+import matplotlib.pyplot as plt
 from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.dummy import DummyClassifier
@@ -13,7 +14,9 @@ from sklearn.datasets import load_files
 from sklearn.model_selection import GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+from sklearn.naive_bayes import MultinomialNB
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -21,18 +24,13 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 stop_words = set(nltk.corpus.stopwords.words('english'))
 tokenized_stop_words = nltk.word_tokenize(' '.join(nltk.corpus.stopwords.words('english')))
 
+
 class LemmaTokenizer(object):
     def __init__(self):
         self.wnl = WordNetLemmatizer()
-        self.stemmer = nltk.stem.PorterStemmer()
 
-    def __call__(self, articles):
-        return [self._stem(self.wnl.lemmatize(t)) for t in nltk.word_tokenize(articles)]
-
-    def _stem(self, token):
-        if token in stop_words:
-            return token
-        return self.stemmer.stem(token)
+    def __call__(self, doc):
+        return [self.wnl.lemmatize(t) for t in nltk.word_tokenize(doc)]
 
 
 def get_data():
@@ -55,20 +53,20 @@ def get_data():
     pos = open('rt-polaritydata/rt-polarity.pos', encoding='cp1252')
 
     # TODO: REVIVE BEFORE SUBMITTING
-    # for i, line in enumerate(neg):
-    #     if i < 0.8 * length:
-    #         f = open('rt-polaritydata/train/neg/input_%i.data' % i, 'w', encoding='UTF-8')
-    #     else:
-    #         f = open('rt-polaritydata/test/neg/input_%i.data' % i, 'w', encoding='UTF-8')
-    #     f.write(line)
-    #     f.close()
-    # for i, line in enumerate(pos):
-    #     if i < 0.8 * length:
-    #         f = open('rt-polaritydata/train/pos/input_%i.data' % i, 'w', encoding='UTF-8')
-    #     else:
-    #         f = open('rt-polaritydata/test/pos/input_%i.data' % i, 'w', encoding='UTF-8')
-    #     f.write(line)
-    #     f.close()
+    for i, line in enumerate(neg):
+        if i < 0.9 * length:
+            f = open('rt-polaritydata/train/neg/input_%i.data' % i, 'w', encoding='UTF-8')
+        else:
+            f = open('rt-polaritydata/test/neg/input_%i.data' % i, 'w', encoding='UTF-8')
+        f.write(line)
+        f.close()
+    for i, line in enumerate(pos):
+        if i < 0.9 * length:
+            f = open('rt-polaritydata/train/pos/input_%i.data' % i, 'w', encoding='UTF-8')
+        else:
+            f = open('rt-polaritydata/test/pos/input_%i.data' % i, 'w', encoding='UTF-8')
+        f.write(line)
+        f.close()
 
     train = load_files('rt-polaritydata/train')
     train_x, train_y = train.data, train.target
@@ -79,7 +77,7 @@ def get_data():
     # TODO
     # cvec = CountVectorizer(ngram_range=(1, 1), stop_words=tokenized_stop_words,
     # min_df=infreq*min, tokenizer=LemmaTokenizer())
-    cvec = CountVectorizer(ngram_range=(1, 1), min_df=0)
+    cvec = CountVectorizer(ngram_range=(1, 1), min_df=3)
 
     train_x = cvec.fit(train_x).transform(train_x)
     test_x = cvec.transform(test_x)
@@ -89,26 +87,38 @@ def get_data():
     grid = GridSearchCV(LogisticRegression(), parameter, cv=5)
     grid.fit(train_x, train_y)
 
-    print("LR accuracy: {:.2f}".format(grid.best_score_))
+    print("LR accuracy: {:.4f}".format(grid.best_score_))
 
     # SVM
-    clf = svm.SVC(kernel= 'linear', C = 1)
-    clf.fit(train_x, train_y)
-    predicted = clf.predict(test_x)
-    print("SVM Accuracy: ", accuracy_score(test_y, predicted))
+    parameter = {'C': [0.1, 1, 10]}
+    grid = GridSearchCV(svm.LinearSVC(), parameter, cv=5)
+    grid.fit(train_x, train_y)
+    print("SVM accuracy: {:.4f}".format(grid.best_score_))
 
     # Naive Bayes
-    clf = GaussianNB()
+    parameter = {'alpha': [0, 1, 2, 3]}
     df_train_x = pd.DataFrame(train_x.todense(), columns=cvec.get_feature_names())
+    grid = GridSearchCV(MultinomialNB(), parameter, cv = 5)
+    grid.fit(df_train_x, train_y)
+    print("NB accuracy: {:.4f}".format(grid.best_score_))
+
+    clf = MultinomialNB(alpha=grid.best_params_.get('alpha'))
     df_test = pd.DataFrame(test_x.todense(), columns=cvec.get_feature_names())
     clf.fit(df_train_x, train_y)
     predicted = clf.predict(df_test)
-    print("NB Accuracy: ", accuracy_score(test_y, predicted))
+    results = confusion_matrix(test_y, predicted)
+    print("Confusion matrix: ")
+    print(results)
+    plt.imshow(results, cmap='binary', interpolation='None')
+    plt.show()
 
     # Dummy classifier random
     dummy_classifier = DummyClassifier(strategy="uniform")
     dummy_classifier.fit(train_x, train_y)
     predicted = dummy_classifier.predict(test_x)
     print("Dummy accuracy: ", accuracy_score(test_y, predicted))
+
+
+
 
 get_data()
